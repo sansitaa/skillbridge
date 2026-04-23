@@ -1,0 +1,263 @@
+// ============================================================
+//  SkillBridge — Prisma Schema
+//  Engine  : postgresql (Vercel Postgres)
+//  Version : 1.0.0
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+// ──────────────────────────────────────────────
+//  ENUMS
+// ──────────────────────────────────────────────
+
+enum SessionStatus {
+  PENDING    // Booked, awaiting teacher confirmation
+  ONGOING    // Both parties checked-in, session live
+  COMPLETED  // Session finished; awaiting learner review
+  DISPUTED   // Raised by either party; credits frozen
+}
+
+enum EscrowStatus {
+  HELD      // Credits deducted from learner, NOT yet given to teacher
+  RELEASED  // Teacher confirmed + review submitted → credits paid out
+  REFUNDED  // Dispute resolved in learner's favour
+}
+
+enum TransactionType {
+  EXCHANGE  // Peer-to-peer session payment
+  REWARD    // Onboarding bonus, referral, etc.
+  DECAY     // Weekly credit decay (anti-hoarding mechanic)
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum SkillCategory {
+  TECHNOLOGY
+  DESIGN
+  BUSINESS
+  LANGUAGE
+  MUSIC
+  FITNESS
+  COOKING
+  CRAFTS
+  ACADEMIC
+  OTHER
+}
+
+// ──────────────────────────────────────────────
+//  USER
+// ──────────────────────────────────────────────
+
+model User {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Auth
+  email              String   @unique
+  name               String
+  avatarUrl          String?
+  passwordHash       String?  // null if OAuth-only
+
+  // Economy
+  credits            Int      @default(2)  // Staggered onboarding: starts at 2
+  escrowBalance      Int      @default(0)  // Credits currently locked in escrow
+  totalEarned        Int      @default(0)  // Lifetime credits earned (analytics)
+  totalSpent         Int      @default(0)  // Lifetime credits spent (analytics)
+
+  // Profile
+  bio                String?
+  timezone           String?
+  isFullyOnboarded   Boolean  @default(false)
+  onboardingBonus    Boolean  @default(false) // TRUE once the +6 bonus is granted
+
+  // Reputation
+  rating             Float    @default(0.0)
+  totalSessions      Int      @default(0)
+  totalTeachSessions Int      @default(0)
+  totalLearnSessions Int      @default(0)
+
+  // Relations
+  skills             Skill[]
+  sessionsAsTeacher  Session[]       @relation("TeacherSessions")
+  sessionsAsLearner  Session[]       @relation("LearnerSessions")
+  reviewsGiven       Review[]        @relation("ReviewsGiven")
+  reviewsReceived    Review[]        @relation("ReviewsReceived")
+  sentTransactions   Transaction[]   @relation("SentTransactions")
+  receivedTransactions Transaction[] @relation("ReceivedTransactions")
+  weeklyLimits       WeeklyLimit[]
+
+  @@index([email])
+}
+
+// ──────────────────────────────────────────────
+//  SKILL
+// ──────────────────────────────────────────────
+
+model Skill {
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  name        String
+  description String?
+  category    SkillCategory @default(OTHER)
+  level       SkillLevel    @default(BEGINNER)
+  tags        String[]      // e.g. ["React", "TypeScript"]
+
+  // Teacher
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sessions    Session[]
+
+  @@index([userId])
+  @@index([category])
+}
+
+// ──────────────────────────────────────────────
+//  SESSION
+// ──────────────────────────────────────────────
+
+model Session {
+  id            String        @id @default(cuid())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Participants
+  teacherId     String
+  teacher       User          @relation("TeacherSessions", fields: [teacherId], references: [id])
+  learnerId     String
+  learner       User          @relation("LearnerSessions", fields: [learnerId], references: [id])
+
+  // Skill context
+  skillId       String
+  skill         Skill         @relation(fields: [skillId], references: [id])
+
+  // Scheduling
+  scheduledAt   DateTime
+  completedAt   DateTime?
+  durationMins  Int           @default(60)
+
+  // Economy
+  creditCost    Int           @default(1)     // Credits moved to escrow on booking
+  status        SessionStatus @default(PENDING)
+  escrowStatus  EscrowStatus  @default(HELD)
+
+  // Anti-Farming
+  // Incremented each time a participant submits a live check-in ping.
+  // A session must have ≥ 2 check-ins to be eligible for COMPLETED status.
+  checkInCount  Int           @default(0)
+  teacherCheckedIn  Boolean   @default(false)
+  learnerCheckedIn  Boolean   @default(false)
+
+  // Dispute
+  disputeReason String?
+  disputedAt    DateTime?
+
+  review        Review?
+
+  @@index([teacherId])
+  @@index([learnerId])
+  @@index([skillId])
+  @@index([status])
+}
+
+// ──────────────────────────────────────────────
+//  REVIEW
+// ──────────────────────────────────────────────
+
+model Review {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+
+  rating      Int      // 1 – 5  (enforced in app logic)
+  comment     String?
+
+  // Reviewer (always the learner for now)
+  reviewerId  String
+  reviewer    User     @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+
+  // Reviewed (always the teacher)
+  revieweeId  String
+  reviewee    User     @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  // One review per session, enforced by unique constraint
+  sessionId   String   @unique
+  session     Session  @relation(fields: [sessionId], references: [id])
+
+  @@index([revieweeId])
+}
+
+// ──────────────────────────────────────────────
+//  TRANSACTION
+// ──────────────────────────────────────────────
+
+model Transaction {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+
+  senderId    String
+  sender      User            @relation("SentTransactions", fields: [senderId], references: [id])
+
+  receiverId  String
+  receiver    User            @relation("ReceivedTransactions", fields: [receiverId], references: [id])
+
+  amount      Int             // Positive integer, direction determined by type
+  type        TransactionType
+
+  // Optional reference back to the session that triggered this tx
+  sessionId   String?
+
+  // Human-readable note for audit trail
+  note        String?
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([type])
+}
+
+// ──────────────────────────────────────────────
+//  WEEKLY LIMIT  (Anti-Farming Guard)
+//  ─────────────────────────────────────────────
+//  Tracks how many credits user A has EARNED
+//  from user B within the current ISO week.
+//
+//  Rule enforced in application layer:
+//    IF weeklyCreditsEarned >= 3 THEN
+//      block session booking between this pair.
+// ──────────────────────────────────────────────
+
+model WeeklyLimit {
+  id                  String   @id @default(cuid())
+  updatedAt           DateTime @updatedAt
+
+  // The teacher receiving credits
+  teacherId           String
+  teacher             User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  // The learner paying credits
+  learnerId           String
+
+  // ISO week identifier: "2024-W23"
+  weekKey             String
+
+  // Running total for this teacher/learner/week triple
+  weeklyCreditsEarned Int      @default(0)
+
+  @@unique([teacherId, learnerId, weekKey])
+  @@index([teacherId, weekKey])
+}
