@@ -1,9 +1,19 @@
+import type { Metadata } from "next";
 import "./globals.css";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const metadata: Metadata = {
+  title: "SkillBridge | Peer-to-Peer Learning",
+  description: "Exchange skills, elevate minds. The premium skill exchange platform.",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en">
-      <body className="bg-space-950 text-white min-h-screen">
+    <html lang="en" className="scroll-smooth">
+      <body className="bg-[#050505] text-white antialiased">
         {children}
       </body>
     </html>
