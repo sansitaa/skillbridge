@@ -91,15 +91,24 @@ const GlassCard = ({
   );
 };
 
-const ShimmerButton = ({ children, variant = "primary" }: { children: React.ReactNode; variant?: "primary" | "secondary" }) => {
+const ShimmerButton = ({ 
+  children, 
+  variant = "primary", 
+  className = "" // 1. Accept className here
+}: { 
+  children: React.ReactNode; 
+  variant?: "primary" | "secondary";
+  className?: string; // 2. Tell TypeScript it's okay to have a className
+}) => {
   const isPrimary = variant === "primary";
   return (
     <motion.button
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.97 }}
       transition={springWeighted}
+      // 3. Add ${className} to the end of this string
       className={`relative overflow-hidden rounded-full px-8 py-3.5 text-sm font-medium tracking-wide transition-colors duration-300
-        ${isPrimary ? "bg-white text-black" : "bg-transparent text-white border border-white/20 hover:bg-white/5"}`}
+        ${isPrimary ? "bg-white text-black" : "bg-transparent text-white border border-white/20 hover:bg-white/5"} ${className}`}
     >
       <span className="relative z-10 flex items-center gap-2">{children}</span>
       {isPrimary && (
