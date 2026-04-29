@@ -1,6 +1,5 @@
 # SkillBridge — Project Setup Guide
 # ============================================================
-
 # ── 1. SCAFFOLD ────────────────────────────────────────────
 npx create-next-app@latest skillbridge \
   --typescript \
