@@ -53,7 +53,10 @@ const fadeSlideUp: Variants = {
     opacity: 1,
     y: 0,
     filter: "blur(0px)",
-    transition: springWeighted,
+    transition: {
+      ...springWeighted,
+      filter: { type: "tween", duration: 0.4, ease: "easeOut" }
+    },
   },
 };
 
