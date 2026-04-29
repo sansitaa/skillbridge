@@ -31,8 +31,9 @@ interface FlowStepProps {
 }
 
 // ─── Animation Physics & Variants ──────────────────────────────────────────────
-const springWeighted: Variants["visible"] = {
-  type: "spring",
+// ─── Animation Physics & Variants ──────────────────────────────────────────────
+const springWeighted = {
+  type: "spring" as const,
   stiffness: 90,
   damping: 16,
   mass: 1.1,
